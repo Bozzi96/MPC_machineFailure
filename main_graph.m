@@ -183,7 +183,8 @@ while 1
        reschedule_for_repairing = 0;
     end
     % If the production process is completed, exit the while loop
-    if t > 1000
+    % TODO: check the best "exit condition"
+    if size(sol_optim.c,1) == size(arrivals,1) && t > sol_optim.C 
         break
     end
     t = t + 1 ; % Update time
