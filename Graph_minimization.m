@@ -1,4 +1,6 @@
-function sol = Graph_minimization(G,G_j,P, S0, sol_prec, M0, last_event)% Parameters: 
+%%% This function reschedules the jobs in the shop floor considering the
+%%% last event that happened in the shop floor
+function sol = Graph_minimization(G,G_j,P, S0, sol_prec, M0, R, last_event)% Parameters: 
     % G = graph 
     % G_j = number of alternatives (rows in the flow-shop graph)
     % P = matrix with processing time of job j on machine m (jobs x machines)
@@ -7,7 +9,8 @@ function sol = Graph_minimization(G,G_j,P, S0, sol_prec, M0, last_event)% Parame
     % J = jobs; M = machines; A = alternatives; D = disjunctive connections
     
     % Params
-    BigM = 10000; % Big-M
+    BigM = 1e5; % Big-M
+    LittleBigM = BigM*0.01;
     % Set computation
     G_init = G ;
     % Pre processing dei dati
@@ -37,10 +40,13 @@ function sol = Graph_minimization(G,G_j,P, S0, sol_prec, M0, last_event)% Parame
     % Start time > S0
     cons_startTime = optimconstr(J, M);
     for j=1:J
-        cons_startTime(j,:) = s(j,:) >= S0(j)*ones(1,M);
+        for m=1:M
+            cons_startTime(j,m) = s(j,m) >= max(S0(j),R(j,m));
+        end
     end
     prob.Constraints.cons_startTime = cons_startTime;
     
+   
     % Start time > Completion time previous machine conditioned to the choice
     % of that alternative in the graph
     cons_alternatives = optimconstr(sum(sum(G(:,2:end)~=0)),1);
@@ -163,9 +169,26 @@ function sol = Graph_minimization(G,G_j,P, S0, sol_prec, M0, last_event)% Parame
     end
     
     prob.Constraints.cons_gamma = cons_gamma;
-    
-    % Cost function
-    prob.Objective = C;%+sum(sum(s))+sum(sum(c));
+
+%% Machine failure constraints
+ % Start time = BigM if there is machine maintenance
+    P_bigM = length(find(P==LittleBigM));
+    if P_bigM > 0
+        cons_startTimeOnMaintenance = optimconstr(P_bigM,1);
+        idx = 1;
+        for j=1:J
+            for m=1:M
+                if(P(j,m) == LittleBigM)
+                    cons_startTimeOnMaintenance(idx) = s(j,m) >= LittleBigM;
+                    idx = idx +1 ;
+                end
+            end
+        end
+        prob.Constraints.cons_startTimeOnMaintenance = cons_startTimeOnMaintenance;
+    end
+     
+    %% Cost function
+    prob.Objective = C+sum(sum(s))+sum(sum(c));
     
     % Initial conditions
     x0.gamma = zeros(A,1);
@@ -187,13 +210,13 @@ function sol = Graph_minimization(G,G_j,P, S0, sol_prec, M0, last_event)% Parame
         job_prec=Gj_uni(S0<last_event);
         for i=1:sum(S0<last_event)
             % Loop for all the jobs already in the shop (before the last event)
-            for j=1:length(startTime{i})
-                if startTime{1,i}(j) < last_event && completionTime{1,i}(j) > 0
+            for j=1:length(startTime{1,i})
+                if int8(startTime{1,i}(j)) < last_event && completionTime{1,i}(j) > 0
                     % Save the state of the jobs that have already
                     % performed some operations as new constraints
                     % ---> Dynamic scheduling
                     start_prec(index) = s(job_prec(i),path(job_prec(i),j)) == startTime{1,i}(j); % Impose the continuity between previous and current state
-                    compl_prec(index) = c(job_prec(i),path(job_prec(i),j)) == completionTime{1,i}(j); % startTime{1,i}(j) + P(i,path(i,j)) Impose the continuity between previous and current state
+                    compl_prec(index) = c(job_prec(i),path(job_prec(i),j)) ==  startTime{1,i}(j) + P(i,path(i,j)); % completionTime{1,i}(j); Impose the continuity between previous and current state
                     index= index+1;
                 end
             end
@@ -201,10 +224,16 @@ function sol = Graph_minimization(G,G_j,P, S0, sol_prec, M0, last_event)% Parame
         % Add the state constraints to the optimization problem
         if exist ('start_prec','var') && exist ('compl_prec', 'var')
             prob.Constraints.start_prec = start_prec;
-            prob.Constraints.start_prec = compl_prec;
+            prob.Constraints.compl_prec = compl_prec;
         end
     end
     %%% END: Dynamic scheduling
-    [sol,val] = solve(prob,x0);
+    options = optimoptions("intlinprog",'LPOptimalityTolerance',0.1,'MaxTime',100);
+    [sol,val]=solve(prob,x0,'Options',options);
+    % If I do not find a solution, I take the previous solution
+    if isempty(sol.C)
+        sol = sol_prec;
+    end
+
     toc
 end

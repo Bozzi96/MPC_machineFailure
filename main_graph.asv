@@ -96,36 +96,32 @@ while 1
     % Check if processing times need to be updated due to the completion of a task
     if ~isempty(sol_optim) && sum(sum(ismember(int8(sol_optim.c), t))) > 0
         [row, col] = find(int8(sol_optim.c) == t); % Find jobs which completed a task
-        for el=1:size(row) % Loop through all jobs which completed a task
-            if int8(sol_optim.c(row(el),col(el))) ~= int8(sol_optim.s(row(el),col(el))) % Consider only the completion of jobs in the chosen path (other jobs have start = completion)
+        for el=1:size(row)
+            if int8(sol_optim.c(row(el),col(el))) ~= int8(sol_optim.s(row(el),col(el))) % Consider only the completion of jobs in the chosen path (others have start = completion)
                 update_processing = 1;
                 % Update processing time of the machine, for jobs  in the shop
                 % that may pass through the machine after the current job
-                for j_later=1:size(sol_optim.c,1) % Loop through all jobs
-                    % If the job is scheduled to pass through that machine,
-                    % or if the job is notscheduled but it may pass through
-                    % that machine after dynamic re-routing due to other events
-                    if (int8(sol_optim.s(j_later, col(el))) >= t) || ... % The job is scheduled to pass through that machine
-                            (Flexibility(j_later,col(el)) == 1 && int8(sol_optim.s(j_later, col(el))) == int8(sol_optim.c(j_later, col(el)))) % The job is not scheduled to pass through that machine
-                        P(j_later,col(el)) = P(j_later,col(el)) + decay_coefficient;
+                for j_late=1:size(sol_optim.c,1) % Loop through all jobs
+                    if (int8(sol_optim.s(j_late, col(el))) >= t) || ... % The job is scheduled to pass through that machine
+                            (Flexibility(j_late,col(el)) == 1 && int8(sol_optim.s(j_late, col(el))) == int8(sol_optim.c(j_late, col(el)))) % The job is not scheduled to pass through that machine
+                        P(j_late,col(el)) = P(j_late,col(el)) + decay_coefficient;
                         % Check if machine needs maintenance because P > Pmax
-                        if P(j_later,col(el)) >= P_max(j_later,col(el))
-                            P(j_later,col(el)) = LittleBigM; % Machine unavailable
-                        % Save the initial maintenance time and info
+                        if P(j_late,col(el)) >= P_max(j_late,col(el))
+                            P(j_late,col(el)) = LittleBigM; % Machine unavailable
                         if time_disruption(col(el)) == LittleBigM
-                            time_disruption(col(el)) = t;
+                            time_disruption(col(el)) = t; % Save the initial maintenance time
                             maintenance_info(end+1,:) = [col(el) time_disruption(col(el)) time_disruption(col(el))+time_to_repair(col(el))];
                         end 
                             reschedule_for_maintenance = 1;
                         end
                     end
                 end
-                % Update processing time of the machine for jobs not arrived yet in the shop
-                for j_later2=J:-1:j_later+1
-                    P(j_later2,col(el)) = P(j_later2,col(el)) + decay_coefficient;
+                % Update processing of jobs not arrived yet in the shop
+                for j_late2=J:-1:j_late+1
+                    P(j_late2,col(el)) = P(j_late2,col(el)) + decay_coefficient;
                     % Check if machine needs maintenance because P > Pmax
-                    if P(j_later2,col(el)) >= P_max(j_later2,col(el))
-                        P(j_later2,col(el)) = LittleBigM; % Machine unavailable
+                    if P(j_late2,col(el)) >= P_max(j_late2,col(el))
+                        P(j_late2,col(el)) = LittleBigM; % Machine unavailable
                     if time_disruption(col(el)) == LittleBigM
                         time_disruption(col(el)) = t; % Save the initial maintenance time
                     end 
@@ -138,23 +134,18 @@ while 1
     % Check if a machine has just ended its maintenance
     for m=1:M
         if (t == (time_disruption(m)+time_to_repair(m)))
-            for j_later=1:size(sol_optim.c,1) % Loop through all jobs
-                % If the job is scheduled to pass through that machine,
-                    % or if the job is notscheduled but it may pass through
-                    % that machine after dynamic re-routing due to other events
-                    % (Not sure if it is needed here)
-                    if (int8(sol_optim.s(j_later, m)) >= t) || ... % 
-                            (Flexibility(j_later,m) == 1 && sol_optim.s(j_later, m) == sol_optim.c(j_later, m))
-                        % Restore processing time to nominal value
-                        P(j_later,m) = P_0(j_later,m);
-                        R(j_later,m) = time_disruption(m) + time_to_repair(m); % Save maintenance info for rescheduling
+            for j_late=1:size(sol_optim.c,1) % Loop through all jobs
+                    if (int8(sol_optim.s(j_late, m)) >= t) %|| ... % The job is scheduled to pass through that machine)
+                            %(Flexibility(j_late,m) == 1 && sol_optim.s(j_late, m) == sol_optim.c(j_late, m)) % The job is not scheduled to pass through that machine)
+                        P(j_late,m) = P_0(j_late,m);
+                        R(j_late,m) = time_disruption(m) + time_to_repair(m);
                     end
             end
-            time_disruption(m) = LittleBigM; % Restore disruption time
+            time_disruption(m) = LittleBigM;
             reschedule_for_repairing = 1;
         end
     end
-    % If no event happened, but the processing times need to be updated due
+    % If no event happened, but the processing times need to be updated xue
     % to the completion of one task
     % ---> keep the same routing and scheduling, but update processing
     if update_processing && ~reschedule_for_arrival && ...

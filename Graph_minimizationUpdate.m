@@ -1,26 +1,28 @@
-function [solMax,utilz] = Graph_maximization(G,G_j,P,sol, BigOmega, S0)% Parameters: 
+%%% This function does not reschedule the jobs, but it accounts for the
+%%% update in processing time
+%%% No modification of gamma, delta variables. Routing and sequencing is fixed
+function sol = Graph_minimizationUpdate(G,G_j,P, S0, sol_prec, M0, R, last_event)% Parameters: 
     % G = graph 
     % G_j = number of alternatives (rows in the flow-shop graph)
     % P = matrix with processing time of job j on machine m (jobs x machines)
-    % sol = optimal solution in absence of noises
-    % BigOmega = intensity of noise
     % S0 = arrival time of jobs in the shop
     % SETS: (sets are re-computed from G and G_j automatically!)
     % J = jobs; M = machines; A = alternatives; D = disjunctive connections
     
-    % Parameters
-    BigM = 10000; % Big-M
+    % Params
+    BigM = 1e5; % Big-M
+    LittleBigM = BigM*0.01;
     % Set computation
     G_init = G ;
     % Pre processing dei dati
-    [G, P, M_init, aux, aux_alt] = pre_processing_graph(G_init, P);
-    J = length(unique(G_j)); % jobs
-    M = max(max(G)); % machines
-    A = size(G_j,1); % alternatives
-    D = compute_D_from_graph(G_init,G_j); % disjunctive connections (2 constraints per each connection)
+    [G, P, M_init, aux, aux_alt] = pre_processing_graph(G_init, P, M0);
+    J = length(unique(G_j)); %jobs
+    M = max(max(G)); %machines
+    A = size(G_j,1);%alternatives
+    D = compute_D_from_graph(G_init,G_j); % disjunctive connections (2 constraints per each connection)    
     
     % Optimization problem
-    prob = optimproblem('ObjectiveSense','max');
+    prob = optimproblem('ObjectiveSense','min');
     
     % Decision variables
     % s [j,m] = Start time of job j on machine m
@@ -31,21 +33,23 @@ function [solMax,utilz] = Graph_maximization(G,G_j,P,sol, BigOmega, S0)% Paramet
     s = optimvar('s', J, M, 'LowerBound', 0);
     c = optimvar('c', J, M, 'LowerBound', 0);
     C = optimvar('C', 1, 'LowerBound', 0);
+    %gamma = optimvar('gamma', A, 1, 'Type', 'integer', 'LowerBound', 0, 'UpperBound', 1);
     %delta = optimvar('delta', D, 1, 'Type', 'integer', 'LowerBound', 0, 'UpperBound', 1);
-    omega = optimvar('omega', J, M, 'LowerBound', 0,'UpperBound',1);
-    DeltaNew = optimvar('DeltaNew', J, 1,'LowerBound', 0);
-    % Gamma are parameters (path is imposed)
-    gamma = sol.gamma;
-    delta = sol.delta;
-
+    % Routing and sequencing is fixed
+    gamma = sol_prec.gamma;
+    delta = sol_prec.delta;
     %%% Constraints %%%
+    
     % Start time > S0
     cons_startTime = optimconstr(J, M);
     for j=1:J
-        cons_startTime(j,:) = s(j,:) >= S0(j)*ones(1,M);
+        for m=1:M
+            cons_startTime(j,m) = s(j,m) >= max(S0(j),R(j,m));
+        end
     end
     prob.Constraints.cons_startTime = cons_startTime;
     
+   
     % Start time > Completion time previous machine conditioned to the choice
     % of that alternative in the graph
     cons_alternatives = optimconstr(sum(sum(G(:,2:end)~=0)),1);
@@ -60,13 +64,29 @@ function [solMax,utilz] = Graph_maximization(G,G_j,P,sol, BigOmega, S0)% Paramet
     end
     prob.Constraints.cons_alternatives = cons_alternatives;
     
-    % Completion time = start time + processing time on the same machine
-    % considering the possible delay on that machine
+    % Completion time = start time + processing time on the same machine *
+    % summation on alternatives in which job j passes through that machine
     cons_processingTime = optimconstr(J*M,1);
     i = 1;
+    gamma_aux = 0;
     for j=1:J
+        idx = find(G_j==j); % find alternatives of job j in G_j
         for m=1:M
-            cons_processingTime(i) = c(j,m) == s(j,m) + P(j,m) + P(j,m)* omega(j,m);
+            gamma_aux = 0;
+            [idx_m,~] = find(G(:,:) == m); % find the row in which machine m is present among the rows of job j
+            if(~isempty(idx_m))
+                shared_idx = intersect(idx, idx_m); % find intersection between wors of job j and rowa in which machine m is present
+                if(~isempty(shared_idx))
+                    for index=1:size(shared_idx)
+                        gamma_aux = gamma_aux+ gamma(shared_idx(index)); % add the alternatives
+                    end
+                    cons_processingTime(i) = c(j,m) == s(j,m) + P(j,m)*gamma_aux;
+                else
+                    cons_processingTime(i) = c(j,m) == s(j,m) + P(j,m);
+                end
+            else 
+                cons_processingTime(i) = c(j,m) == s(j,m) + P(j,m);
+            end
             i = i+1;
         end
     end
@@ -103,7 +123,7 @@ function [solMax,utilz] = Graph_maximization(G,G_j,P,sol, BigOmega, S0)% Paramet
     cons_disjunctiveOnDuplicate = optimconstr(D,1);
     % Disjunctive constraints due to machine duplication
     for i=1:size(G,1)
-        for j=1:size(G,2)
+        for j=1:size(G,2) 
             if(G(i,j)>M_init ) % if G(i,j) is a duplicated machine
                 % Find the original machine
                 [m_orig, col_orig] = find(G(i,j) == aux);
@@ -136,43 +156,88 @@ function [solMax,utilz] = Graph_maximization(G,G_j,P,sol, BigOmega, S0)% Paramet
     end
     prob.Constraints.cons_disjunctive = cons_disjunctive;
     prob.Constraints.cons_disjunctiveOnDuplicate = cons_disjunctiveOnDuplicate;
-    idx1 = find(sol.gamma > 0.1); % eliminate inaccuracies due to rounding 
-    
-    % Last completion time constraints 
-    cons_completionTime = optimconstr(J,1);
-    for j=1:J
-        cons_completionTime(j) = C == c(j,G(idx1(j),find(G(idx1(j),:)~=0, 1, 'last' )))+DeltaNew(j); % find(..'last') = max(find(..))
+    % Final completion time constraints
+    cons_completionTime = optimconstr(A,1);
+    for j=1:A
+        cons_completionTime(j) = C >= c(G_j(j),G(j,find(G(j,:)~=0, 1, 'last' ))); % find(..'last') = max(find(..))
     end
     
     prob.Constraints.cons_completionTime = cons_completionTime;
     
- idx = find(sol.gamma > 0); % eliminate inaccuracies due to rounding
-    % Constraints on delay
-   cons_delay = optimconstr(1,1);
-   costOmega = 0;
-    for j=1:J
-        jobs = G(idx(j),:);
-        for m=1:M
-            if sum(ismember(jobs,m)) >0
-                costOmega = costOmega + omega(j,m);
+    % Decision variables constraints (gamma)
+%     cons_gamma = optimconstr(J,1);
+%     for j=1:J
+%         idx = G_j == j; % for each possible alternative on job j
+%         cons_gamma(j) = sum(gamma(idx)) == 1; % choose only one alternative
+%     end
+%     
+%     prob.Constraints.cons_gamma = cons_gamma;
+
+%% Machine failure constraints
+ % Start time = BigM if there is machine maintenance
+    P_bigM = length(find(P==LittleBigM));
+    if P_bigM > 0
+        cons_startTimeOnMaintenance = optimconstr(P_bigM,1);
+        idx = 1;
+        for j=1:J
+            for m=1:M
+                if(P(j,m) == LittleBigM)
+                    cons_startTimeOnMaintenance(idx) = s(j,m) >= LittleBigM;
+                    idx = idx +1 ;
+                end
             end
         end
+        prob.Constraints.cons_startTimeOnMaintenance = cons_startTimeOnMaintenance;
     end
-       cons_delay = costOmega == BigOmega;
-   prob.Constraints.cons_delay = cons_delay;
-
-    % Cost function
-   prob.Objective = C-10^4*sum(sum(s))-10^4*sum(sum(c))-10^6*sum(sum(DeltaNew));
+     
+    %% Cost function
+    prob.Objective = C+sum(sum(s))+sum(sum(c));
     
     % Initial conditions
-    %x0.delta = zeros(D,1);
+%     x0.gamma = zeros(A,1);
+%     x0.delta = zeros(D,1);
     x0.C = 0;
     x0.c = zeros(J,M);
     x0.s = zeros(J,M);
-    x0.omega = zeros(J,M);
-    x0.DeltaNew = zeros(J,1);
     %% Solve problem
+    %show(prob)
     tic
-    [solMax,val] = solve(prob,x0);
+    %%% BEGIN: Dynamic scheduling --- save the "state" of the system
+    %%% until the current instant, for jobs already present in the shop
+    %%% that have already performed some operations in machines
+    if ~isempty(sol_prec)
+        % Save the state of all jobs from previous event: start, completion, path
+        [startTime, completionTime, path] = getSchedulingState(sol_prec, G_init, G_j, P, sol_prec.gamma, M0);
+        index=1;
+        Gj_uni=unique(G_j,'stable');
+        job_prec=Gj_uni(S0<last_event);
+        for i=1:sum(S0<last_event)
+            % Loop for all the jobs already in the shop (before the last event)
+            for j=1:length(startTime{1,i})
+                if int8(startTime{1,i}(j)) < last_event && completionTime{1,i}(j) > 0
+                    % Save the state of the jobs that have already
+                    % performed some operations as new constraints
+                    % ---> Dynamic scheduling
+                    start_prec(index) = s(job_prec(i),path(job_prec(i),j)) == startTime{1,i}(j); % Impose the continuity between previous and current state
+                    compl_prec(index) = c(job_prec(i),path(job_prec(i),j)) ==  startTime{1,i}(j) + P(i,path(i,j)); % completionTime{1,i}(j); Impose the continuity between previous and current state
+                    index= index+1;
+                end
+            end
+        end
+        % Add the state constraints to the optimization problem
+        if exist ('start_prec','var') && exist ('compl_prec', 'var')
+            prob.Constraints.start_prec = start_prec;
+            prob.Constraints.compl_prec = compl_prec;
+        end
+    end
+    %%% END: Dynamic scheduling
+    options = optimoptions("intlinprog",'LPOptimalityTolerance',0.1,'MaxTime',100);
+    [sol,val]=solve(prob,x0,'Options',options);
+    sol.gamma = gamma;
+    sol.delta = delta;
+    % If I do not find a solution, I take the previous solution
+    if isempty(sol.C)
+        sol = sol_prec;
+    end
     toc
 end
