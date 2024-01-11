@@ -183,7 +183,6 @@ while 1
        reschedule_for_repairing = 0;
     end
     % If the production process is completed, exit the while loop
-    % TODO: check the best "exit condition"
     if size(sol_optim.c,1) == size(arrivals,1) && t > sol_optim.C 
         break
     end
@@ -196,7 +195,9 @@ xlabel("Time")
 hold on
 % Plot maintenance time
 line_handles = [];  % Initialize an empty array
-maintenance_info(1,:) = []; % Remove first row that is always 0
+if(maintenance_info(1,1) == 0)
+    maintenance_info(1,:) = []; % Remove first row that is 0
+end
 for i=1:size(maintenance_info,1)
             current_line = plot(linspace(maintenance_info(i,2), maintenance_info(i,3), ...
                 20), maintenance_info(i,1), '-x', "Color","red");
