@@ -1,6 +1,7 @@
-%%% This function reschedules the jobs in the shop floor considering the
-%%% last event that happened in the shop floor
-function sol = Graph_minimization(G,G_j,P, S0, sol_prec, M0, R, last_event)% Parameters: 
+%%% This function does not reschedule the jobs, but it accounts for the
+%%% update in processing time
+%%% No modification of gamma, delta variables. Routing and sequencing is fixed
+function sol = Graph_minimizationUpdate_off(G,G_j,P, S0, sol_prec, M0, R, last_event)% Parameters: 
     % G = graph 
     % G_j = number of alternatives (rows in the flow-shop graph)
     % P = matrix with processing time of job j on machine m (jobs x machines)
@@ -32,9 +33,11 @@ function sol = Graph_minimization(G,G_j,P, S0, sol_prec, M0, R, last_event)% Par
     s = optimvar('s', J, M, 'LowerBound', 0);
     c = optimvar('c', J, M, 'LowerBound', 0);
     C = optimvar('C', 1, 'LowerBound', 0);
-    gamma = optimvar('gamma', A, 1, 'Type', 'integer', 'LowerBound', 0, 'UpperBound', 1);
-    delta = optimvar('delta', D, 1, 'Type', 'integer', 'LowerBound', 0, 'UpperBound', 1);
-    
+    %gamma = optimvar('gamma', A, 1, 'Type', 'integer', 'LowerBound', 0, 'UpperBound', 1);
+    %delta = optimvar('delta', D, 1, 'Type', 'integer', 'LowerBound', 0, 'UpperBound', 1);
+    % Routing and sequencing is fixed
+    gamma = sol_prec.gamma;
+    delta = sol_prec.delta;
     %%% Constraints %%%
     
     % Start time > S0
@@ -162,13 +165,13 @@ function sol = Graph_minimization(G,G_j,P, S0, sol_prec, M0, R, last_event)% Par
     prob.Constraints.cons_completionTime = cons_completionTime;
     
     % Decision variables constraints (gamma)
-    cons_gamma = optimconstr(J,1);
-    for j=1:J
-        idx = G_j == j; % for each possible alternative on job j
-        cons_gamma(j) = sum(gamma(idx)) == 1; % choose only one alternative
-    end
-    
-    prob.Constraints.cons_gamma = cons_gamma;
+%     cons_gamma = optimconstr(J,1);
+%     for j=1:J
+%         idx = G_j == j; % for each possible alternative on job j
+%         cons_gamma(j) = sum(gamma(idx)) == 1; % choose only one alternative
+%     end
+%     
+%     prob.Constraints.cons_gamma = cons_gamma;
 
 %% Machine failure constraints
  % Start time = BigM if there is machine maintenance
@@ -179,7 +182,7 @@ function sol = Graph_minimization(G,G_j,P, S0, sol_prec, M0, R, last_event)% Par
         for j=1:J
             for m=1:M
                 if(P(j,m) == LittleBigM)
-                    cons_startTimeOnMaintenance(idx) = s(j,m) >= LittleBigM;
+                    cons_startTimeOnMaintenance(idx) = s(j,m) >= last_event + LittleBigM;
                     idx = idx +1 ;
                 end
             end
@@ -191,8 +194,8 @@ function sol = Graph_minimization(G,G_j,P, S0, sol_prec, M0, R, last_event)% Par
     prob.Objective = C+sum(sum(s))+sum(sum(c));
     
     % Initial conditions
-    x0.gamma = zeros(A,1);
-    x0.delta = zeros(D,1);
+%     x0.gamma = zeros(A,1);
+%     x0.delta = zeros(D,1);
     x0.C = 0;
     x0.c = zeros(J,M);
     x0.s = zeros(J,M);
@@ -204,14 +207,14 @@ function sol = Graph_minimization(G,G_j,P, S0, sol_prec, M0, R, last_event)% Par
     %%% that have already performed some operations in machines
     if ~isempty(sol_prec)
         % Save the state of all jobs from previous event: start, completion, path
-        [startTime, completionTime, path] = getSchedulingState(sol_prec, G_init, G_j, P, sol_prec.gamma, M0, last_event);
+        [startTime, completionTime, path] = getSchedulingState(sol_prec, G_init, G_j, P, sol_prec.gamma, M0);
         index=1;
         Gj_uni=unique(G_j,'stable');
         job_prec=Gj_uni(S0<last_event);
         for i=1:sum(S0<last_event)
             % Loop for all the jobs already in the shop (before the last event)
             for j=1:length(startTime{1,i})
-                if int8(startTime{1,i}(j)) < last_event && completionTime{1,i}(j) > 0 && P(job_prec(i),path(job_prec(i),j)) < 100
+                if int8(startTime{1,i}(j)) < last_event && completionTime{1,i}(j) > 0
                     % Save the state of the jobs that have already
                     % performed some operations as new constraints
                     % ---> Dynamic scheduling
@@ -230,10 +233,11 @@ function sol = Graph_minimization(G,G_j,P, S0, sol_prec, M0, R, last_event)% Par
     %%% END: Dynamic scheduling
     options = optimoptions("intlinprog",'LPOptimalityTolerance',0.1,'MaxTime',100);
     [sol,val]=solve(prob,x0,'Options',options);
+    sol.gamma = gamma;
+    sol.delta = delta;
     % If I do not find a solution, I take the previous solution
     if isempty(sol.C)
         sol = sol_prec;
     end
-
     toc
 end

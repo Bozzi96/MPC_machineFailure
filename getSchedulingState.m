@@ -1,4 +1,4 @@
-function [startTime, completionTime, path] =  getSchedulingState(sol, G_init, G_j, P, gamma, M_init)
+function [startTime, completionTime, path] =  getSchedulingState(sol, G_init, G_j, P, gamma, M_init, t)
 %%% Needed to accomplish dynamic scheduling --
 %%% Get the state of the system in order to save the operations already
 %%% performed and re-schedule jobs considering their past operations

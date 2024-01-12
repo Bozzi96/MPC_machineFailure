@@ -1,11 +1,10 @@
 function [G,G_j, Release_planned] = createGraphFromDataset(datasetFile)
-    % Funzione per leggere un file excel contenente le informazioni sui job
-    % e costruire le variabili necessarie: G, G_j, Release_planned, etc..
-    % Il File excel deve essere fatto così: Colonna 1 Job ID, Colonna 2
-    % Sequenza di operazioni tra parentesi graffe, separate dalla virgola
-    % tra un'operazione e l'altra e separate da uno spazio per indicare le
-    % diverse macchine che possono svolgere l'operazione, Colonna 3 il
-    % tempo di release pianificato, Colonna 4 la due date
+% Function to read an Excel file containing information about jobs
+% and construct the necessary variables: G, G_j, Release_planned, etc.
+% The Excel file should be structured as follows: Column 1 for Job ID,
+% Column 2 for the sequence of operations within curly braces, separated
+% by commas and spaces to indicate different machines for each operation,
+% Column 3 for the planned release time, and Column 4 for the due date.
     G = [];
     G_j = [];
     dataTable = readtable(datasetFile, 'ReadVariableNames', false);
@@ -17,7 +16,7 @@ function [G,G_j, Release_planned] = createGraphFromDataset(datasetFile)
         % Extract the sequence of numbers inside the parenthesis
         numbersCell = regexp(operations{i,:}{1}, '\{([^}]*)\}', 'tokens');
         
-        % Remove ' '
+        % Remove the quotes ''
         numbersCell = cellfun(@(x) strrep(x{1}, '''', ''), numbersCell, 'UniformOutput', false);
         
         % Find all possible paths for the job

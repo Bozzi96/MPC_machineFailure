@@ -29,10 +29,10 @@ function graph_Gantt(sol, G_init, G_j, P, gamma, M0, graph_title)
             hold on
         end
     end
-    title(graph_title)
+    title(graph_title, "FontSize", 20 )
    legendUnq();  % From matlab file exchange
-   legend('-DynamicLegend')
-    ylabel('Machine');
+   legend('-DynamicLegend', 'FontSize', 10)
+    ylabel('Machine', "FontSize", 15);
     ylim([0 M_init+1]);
 
 
