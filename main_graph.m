@@ -71,6 +71,11 @@ for j=1:J
 end
 
 %% Solve problem
+% Many simulations to check the computational time
+time_simulaz = zeros(1,50);
+for simulaz= 1:50
+    time_computation = 0; % Variable to store the computational time to execute the scheduling algorithm
+
 % Data for storing results and specific parameters of the scheduling algorithm
 sol_optim = [];
 sol_tot = struct('C', {}, 'c', [], 'delta', [], 'gamma', [], 's', []); %structure to save all the solutions
@@ -159,7 +164,9 @@ while 1
     % ---> keep the same routing and scheduling, but update processing
     if update_processing && ~reschedule_for_arrival && ...
             ~reschedule_for_maintenance && ~reschedule_for_repairing
+            tic % Start the stopwatch
             sol_optim = Graph_minimizationUpdate(G_init,G_j,P, S0, sol_optim,M0, R, t);
+            time_computation = time_computation + toc; % Update the computational time
             update_processing = 0;
     end
     % If an event (arrival, start maintenance, end maintenance) happened
@@ -174,7 +181,9 @@ while 1
        S0 = [jobs_in_shop job_predicted];
        G_j = G_j0(G_j0<=length(S0)); 
        G_init = G_init0(G_j0 <= length(S0),:);
+       tic % Start the stopwatch
        sol_optim = Graph_minimization(G_init,G_j,P, S0, sol_optim,M0, R, t);
+       time_computation = time_computation + toc; % Update the computational time
        sol_tot(end+1) = sol_optim; % Save all the solutions over time
        P_tot(:,:,end+1) = P; % Save all the processing over time
        % Set the event flags to 0
@@ -187,6 +196,8 @@ while 1
         break
     end
     t = t + 1 ; % Update time
+end
+  time_simulaz(simulaz) = time_computation;
 end
 %% Plot solution
 figure()

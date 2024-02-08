@@ -214,7 +214,7 @@ function sol = Graph_minimizationUpdate(G,G_j,P, S0, sol_prec, M0, R, last_event
         for i=1:sum(S0<last_event)
             % Loop for all the jobs already in the shop (before the last event)
             for j=1:length(startTime{1,i})
-                if int8(startTime{1,i}(j)) < last_event && completionTime{1,i}(j) > 0
+                if int8(startTime{1,i}(j)) < last_event && completionTime{1,i}(j) > 0 && P(job_prec(i),path(job_prec(i),j)) < LittleBigM
                     % Save the state of the jobs that have already
                     % performed some operations as new constraints
                     % ---> Dynamic scheduling

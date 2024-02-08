@@ -1,7 +1,7 @@
 function allPaths = generatePaths(operations, currentIndex, currentPath)
     allPaths = {};
     
-    % Se siamo all'ultimo elemento, aggiungi il percorso corrente alla lista
+    % If it is the last element, add the current path to the list
     if currentIndex == numel(operations)
         numbersCell = regexp(operations{currentIndex}, '\d+', 'match');
         numbers = cellfun(@str2num, numbersCell);
@@ -10,7 +10,8 @@ function allPaths = generatePaths(operations, currentIndex, currentPath)
             allPaths{end+1} = [currentPath, numbers(i)];
         end
     else
-        % Altrimenti, per ogni numero nella cella corrente, richiama ricorsivamente la funzione
+        % Otherwise, for each number in the current cell, call the function
+        % recursively
         numbersCell = regexp(operations{currentIndex}, '\d+', 'match');
         numbers = cellfun(@str2num, numbersCell);
         

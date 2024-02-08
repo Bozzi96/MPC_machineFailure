@@ -1,7 +1,7 @@
 %%% This function does not reschedule the jobs, but it accounts for the
 %%% update in processing time
 %%% No modification of gamma, delta variables. Routing and sequencing is fixed
-function sol = Graph_minimizationUpdate_off(G,G_j,P, S0, sol_prec, M0, R, last_event)% Parameters: 
+function sol = Graph_minimizationUpdate_off(G,G_j,P, S0, sol_prec, M0, R, last_event, time_disruption)% Parameters: 
     % G = graph 
     % G_j = number of alternatives (rows in the flow-shop graph)
     % P = matrix with processing time of job j on machine m (jobs x machines)
@@ -68,7 +68,6 @@ function sol = Graph_minimizationUpdate_off(G,G_j,P, S0, sol_prec, M0, R, last_e
     % summation on alternatives in which job j passes through that machine
     cons_processingTime = optimconstr(J*M,1);
     i = 1;
-    gamma_aux = 0;
     for j=1:J
         idx = find(G_j==j); % find alternatives of job j in G_j
         for m=1:M
@@ -182,7 +181,7 @@ function sol = Graph_minimizationUpdate_off(G,G_j,P, S0, sol_prec, M0, R, last_e
         for j=1:J
             for m=1:M
                 if(P(j,m) == LittleBigM)
-                    cons_startTimeOnMaintenance(idx) = s(j,m) >= last_event + LittleBigM;
+                    cons_startTimeOnMaintenance(idx) = s(j,m) >= LittleBigM;% time_disruption(m) + 20;
                     idx = idx +1 ;
                 end
             end
@@ -214,12 +213,12 @@ function sol = Graph_minimizationUpdate_off(G,G_j,P, S0, sol_prec, M0, R, last_e
         for i=1:sum(S0<last_event)
             % Loop for all the jobs already in the shop (before the last event)
             for j=1:length(startTime{1,i})
-                if int8(startTime{1,i}(j)) < last_event && completionTime{1,i}(j) > 0
+                if int8(startTime{1,i}(j)) < last_event && completionTime{1,i}(j) > 0 && P(job_prec(i),path(job_prec(i),j)) < LittleBigM
                     % Save the state of the jobs that have already
                     % performed some operations as new constraints
                     % ---> Dynamic scheduling
                     start_prec(index) = s(job_prec(i),path(job_prec(i),j)) == startTime{1,i}(j); % Impose the continuity between previous and current state
-                    compl_prec(index) = c(job_prec(i),path(job_prec(i),j)) ==  startTime{1,i}(j) + P(i,path(i,j)); % completionTime{1,i}(j); Impose the continuity between previous and current state
+                    compl_prec(index) = c(job_prec(i),path(job_prec(i),j)) ==  completionTime{1,i}(j); %startTime{1,i}(j) + P(i,path(i,j)); % Impose the continuity between previous and current state
                     index= index+1;
                 end
             end
@@ -232,7 +231,7 @@ function sol = Graph_minimizationUpdate_off(G,G_j,P, S0, sol_prec, M0, R, last_e
     end
     %%% END: Dynamic scheduling
     options = optimoptions("intlinprog",'LPOptimalityTolerance',0.1,'MaxTime',100);
-    [sol,val]=solve(prob,x0,'Options',options);
+    [sol,~]=solve(prob,x0,'Options',options);
     sol.gamma = gamma;
     sol.delta = delta;
     % If I do not find a solution, I take the previous solution
